@@ -52,7 +52,6 @@ func handleConn(c *ConnWithTimeout, connPool *ConnPool) {
 		request *Request
 		address string
 		server  net.Conn
-		// closed  = make(chan bool)
 	)
 	defer func() {
 		c.Close()
@@ -73,7 +72,6 @@ func handleConn(c *ConnWithTimeout, connPool *ConnPool) {
 	if strings.Index(address, ":") == -1 {
 		address = address + ":80"
 	}
-	// log.Println(address)
 
 	server = connPool.GetConn(address)
 	if server == nil {
@@ -87,8 +85,6 @@ func handleConn(c *ConnWithTimeout, connPool *ConnPool) {
 		}
 
 		server = conns[0]
-	} else {
-		log.Println("get conn from pool ", address)
 	}
 
 	if request.HttpRequest.Method == "CONNECT" {
