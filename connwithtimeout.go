@@ -13,7 +13,7 @@ type ConnWithTimeout struct {
 func NewConnWithTimeout(conn net.Conn) (c *ConnWithTimeout) {
 	c = &ConnWithTimeout{}
 	c.Conn = conn
-	c.Timeout = time.Second * 5
+	c.Timeout = time.Second * 30
 	return
 }
 
@@ -33,4 +33,9 @@ func (self *ConnWithTimeout) Write(p []byte) (n int, err error) {
 		self.Conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	}
 	return self.Conn.Write(p)
+}
+
+func (self *ConnWithTimeout) Close() (err error) {
+	err = self.Conn.Close()
+	return
 }

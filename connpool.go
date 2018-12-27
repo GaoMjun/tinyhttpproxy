@@ -47,3 +47,17 @@ func (self *ConnPool) AddConn(key string, conn net.Conn) {
 	self.conns[key] = cs
 	return
 }
+
+func (self *ConnPool) AddConns(key string, conns []net.Conn) {
+	self.locker.Lock()
+	defer self.locker.Unlock()
+
+	cs := self.conns[key]
+	if cs == nil {
+		cs = []net.Conn{}
+	}
+	cs = append(cs, conns...)
+
+	self.conns[key] = cs
+	return
+}

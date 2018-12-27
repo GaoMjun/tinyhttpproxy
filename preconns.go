@@ -19,7 +19,7 @@ func PreCreateConns(addr string, n int) (conns []net.Conn, err error) {
 				conn net.Conn
 			)
 
-			conn, err1 := dialer.Dial("tcp", addr)
+			conn, err1 = dialer.Dial("tcp", addr)
 			if err1 == nil {
 				connCh <- conn
 			} else {
@@ -37,11 +37,12 @@ func PreCreateConns(addr string, n int) (conns []net.Conn, err error) {
 		case <-countCh:
 			count++
 			if count >= n {
-				return
+				goto END
 			}
 		}
 	}
 
+END:
 	if len(conns) > 0 {
 		err = nil
 	}

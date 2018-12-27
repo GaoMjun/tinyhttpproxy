@@ -2,17 +2,15 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"strings"
-	"sync"
 )
 
 func init() {
-	log.SetFlags(log.Ldate | log.Lmicroseconds | log.Lshortfile)
+	log.SetFlags(log.Lshortfile)
 }
 
 func main() {
@@ -43,11 +41,12 @@ func main() {
 			return
 		}
 
-		go handleConn(c, connPool)
+		conn := NewConnWithTimeout(c)
+		go handleConn(conn, connPool)
 	}
 }
 
-func handleConn(c net.Conn, connPool *ConnPool) {
+func handleConn(c *ConnWithTimeout, connPool *ConnPool) {
 	var (
 		err     error
 		request *Request
@@ -76,22 +75,21 @@ func handleConn(c net.Conn, connPool *ConnPool) {
 	}
 	// log.Println(address)
 
-	// server, err = net.Dial("tcp", address)
-	// if err != nil {
-	// 	return
-	// }
-
 	server = connPool.GetConn(address)
 	if server == nil {
-		server, err = net.Dial("tcp", address)
+		conns, err := PreCreateConns(address, 4)
 		if err != nil {
 			return
 		}
+
+		if len(conns) > 1 {
+			connPool.AddConns(address, conns[1:])
+		}
+
+		server = conns[0]
+	} else {
+		log.Println("get conn from pool ", address)
 	}
-	// 	server = NewConnWithTimeout(netConn)
-	// } else {
-	// 	log.Println("get conn from pool ", address)
-	// }
 
 	if request.HttpRequest.Method == "CONNECT" {
 		fmt.Fprint(c, "HTTP/1.1 200 Connection established\r\n\r\n")
@@ -99,49 +97,5 @@ func handleConn(c net.Conn, connPool *ConnPool) {
 		server.Write(request.Bytes())
 	}
 
-	// go io.Copy(server, c)
-	// go func() {
-	// 	_, err1 := io.Copy(c, server)
-	// 	if err1, ok := err1.(net.Error); ok && err1.Timeout() {
-	// 		close(closed)
-	// 		return
-	// 	}
-	// 	err = err1
-	// 	server.Conn.Close()
-	// 	server = nil
-	// 	close(closed)
-	// }()
-
-	// <-closed
-	// if server != nil {
-	// 	connPool.AddConn(address, server)
-	// }
-
 	Pipe(c, server)
-}
-
-func Pipe(src io.ReadWriteCloser, dst io.ReadWriteCloser) (int64, int64) {
-
-	var sent, received int64
-	var c = make(chan bool)
-	var o sync.Once
-
-	close := func() {
-		src.Close()
-		dst.Close()
-		close(c)
-	}
-
-	go func() {
-		received, _ = io.Copy(src, dst)
-		o.Do(close)
-	}()
-
-	go func() {
-		sent, _ = io.Copy(dst, src)
-		o.Do(close)
-	}()
-
-	<-c
-	return sent, received
 }

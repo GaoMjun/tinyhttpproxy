@@ -6,7 +6,7 @@ import (
 )
 
 func TestCreateConns(t *testing.T) {
-	conns, err := PreCreateConns("baidu.com", 3)
+	conns, err := PreCreateConns("baidu.com:80", 3)
 	if err != nil {
 		log.Println(err)
 		return
