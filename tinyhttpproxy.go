@@ -1,15 +1,14 @@
 package main
 
 import (
-	"bufio"
-	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"strings"
+	"sync"
 )
 
 func init() {
@@ -18,13 +17,19 @@ func init() {
 
 func main() {
 	var (
-		err error
-		l   net.Listener
+		err      error
+		l        net.Listener
+		connPool = NewConnPool()
 	)
 	defer func() {
 		if err != nil {
 			log.Println(err)
 		}
+	}()
+
+	go func() {
+		err = http.ListenAndServe(":6060", nil)
+		log.Panicln(err)
 	}()
 
 	l, err = net.Listen("tcp", ":8888")
@@ -38,20 +43,17 @@ func main() {
 			return
 		}
 
-		go handleConn(c)
+		go handleConn(c, connPool)
 	}
 }
 
-func handleConn(c net.Conn) {
+func handleConn(c net.Conn, connPool *ConnPool) {
 	var (
-		err    error
-		reader = bufio.NewReader(c)
-
-		request = &Request{}
-
+		err     error
+		request *Request
 		address string
-
-		server net.Conn
+		server  net.Conn
+		// closed  = make(chan bool)
 	)
 	defer func() {
 		c.Close()
@@ -63,24 +65,7 @@ func handleConn(c net.Conn) {
 		}
 	}()
 
-	for {
-		line, isPrefix, err := reader.ReadLine()
-		if err != nil {
-			return
-		}
-		if isPrefix {
-			err = errors.New("line is too long")
-			return
-		}
-
-		request.RawLines = append(request.RawLines, string(line))
-
-		if len(line) == 0 {
-			break
-		}
-	}
-
-	err = request.Parse()
+	request, err = NewRequest(c)
 	if err != nil {
 		return
 	}
@@ -89,12 +74,24 @@ func handleConn(c net.Conn) {
 	if strings.Index(address, ":") == -1 {
 		address = address + ":80"
 	}
-	log.Println(address)
+	// log.Println(address)
 
-	server, err = net.Dial("tcp", address)
-	if err != nil {
-		return
+	// server, err = net.Dial("tcp", address)
+	// if err != nil {
+	// 	return
+	// }
+
+	server = connPool.GetConn(address)
+	if server == nil {
+		server, err = net.Dial("tcp", address)
+		if err != nil {
+			return
+		}
 	}
+	// 	server = NewConnWithTimeout(netConn)
+	// } else {
+	// 	log.Println("get conn from pool ", address)
+	// }
 
 	if request.HttpRequest.Method == "CONNECT" {
 		fmt.Fprint(c, "HTTP/1.1 200 Connection established\r\n\r\n")
@@ -102,54 +99,49 @@ func handleConn(c net.Conn) {
 		server.Write(request.Bytes())
 	}
 
-	go io.Copy(server, c)
-	io.Copy(c, server)
+	// go io.Copy(server, c)
+	// go func() {
+	// 	_, err1 := io.Copy(c, server)
+	// 	if err1, ok := err1.(net.Error); ok && err1.Timeout() {
+	// 		close(closed)
+	// 		return
+	// 	}
+	// 	err = err1
+	// 	server.Conn.Close()
+	// 	server = nil
+	// 	close(closed)
+	// }()
+
+	// <-closed
+	// if server != nil {
+	// 	connPool.AddConn(address, server)
+	// }
+
+	Pipe(c, server)
 }
 
-type Request struct {
-	RawLines    []string
-	HttpRequest *http.Request
+func Pipe(src io.ReadWriteCloser, dst io.ReadWriteCloser) (int64, int64) {
 
-	rawString string
-	rawBytes  []byte
-}
+	var sent, received int64
+	var c = make(chan bool)
+	var o sync.Once
 
-func (self *Request) Dump() (s string) {
-	if len(self.rawString) > 0 {
-		s = self.rawString
-		return
+	close := func() {
+		src.Close()
+		dst.Close()
+		close(c)
 	}
 
-	s = strings.Join(self.RawLines, "\r\n")
-	s = strings.Join([]string{s, "\r\n"}, "")
+	go func() {
+		received, _ = io.Copy(src, dst)
+		o.Do(close)
+	}()
 
-	self.rawString = s
-	return
-}
+	go func() {
+		sent, _ = io.Copy(dst, src)
+		o.Do(close)
+	}()
 
-func (self *Request) DumpHex() (s string) {
-	s = hex.Dump([]byte(self.Dump()))
-	return
-}
-
-func (self *Request) Bytes() (bs []byte) {
-	if len(self.rawBytes) > 0 {
-		bs = self.rawBytes
-		return
-	}
-
-	bs = []byte(self.Dump())
-
-	self.rawBytes = bs
-	return
-}
-
-func (self *Request) Parse() (err error) {
-	r, err := http.ReadRequest(bufio.NewReader(strings.NewReader(self.Dump())))
-	if err != nil {
-		return
-	}
-
-	self.HttpRequest = r
-	return
+	<-c
+	return sent, received
 }
