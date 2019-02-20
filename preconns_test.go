@@ -3,16 +3,18 @@ package main
 import (
 	"log"
 	"testing"
+	"time"
 )
 
 func TestCreateConns(t *testing.T) {
-	conns, err := PreCreateConns("baidu.com:80", 3)
+	start := time.Now()
+	conns, err := PreCreateConns("baidu.com:80", 4)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
-	log.Println(conns)
+	log.Println(time.Since(start))
 	for _, conn := range conns {
 		conn.Close()
 	}

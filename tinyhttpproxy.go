@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"net/http"
 	_ "net/http/pprof"
 	"strings"
 )
@@ -25,12 +24,12 @@ func main() {
 		}
 	}()
 
-	go func() {
-		err = http.ListenAndServe(":6060", nil)
-		log.Panicln(err)
-	}()
+	// go func() {
+	// 	err = http.ListenAndServe(":6060", nil)
+	// 	log.Panicln(err)
+	// }()
 
-	l, err = net.Listen("tcp", ":8888")
+	l, err = net.Listen("tcp", ":8123")
 	if err != nil {
 		return
 	}
@@ -72,10 +71,11 @@ func handleConn(c *ConnWithTimeout, connPool *ConnPool) {
 	if strings.Index(address, ":") == -1 {
 		address = address + ":80"
 	}
+	log.Println(address)
 
 	server = connPool.GetConn(address)
 	if server == nil {
-		conns, err := PreCreateConns(address, 4)
+		conns, err := PreCreateConns(address, 1)
 		if err != nil {
 			return
 		}
